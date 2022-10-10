@@ -8,6 +8,9 @@ data_path: '@torch_june/test/data/data.pkl'
 
 save_path: ./example
 
+analyser:
+  save_path: ./plots
+
 timer:
   total_days: 15
   initial_day: '2022-02-01'
@@ -40,7 +43,7 @@ timer:
       - household
 
 infection_seed:
-  fraction_initial_cases: 0.15
+  log_fraction_initial_cases: -2
 
 networks:
   household:
