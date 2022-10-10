@@ -12,7 +12,6 @@ class Analyser:
     def __init__(self, runner, save_path):
         self.runner = runner
         self.save_path = Path(save_path)
-        self._set_parameters()
         self.results = None
 
     @classmethod
@@ -38,6 +37,7 @@ class Analyser:
             )
 
     def run(self):
+        self._set_parameters()
         self.results, _ = self.runner()
 
     def get_gradient_cases_by_location(self):
@@ -82,4 +82,49 @@ class Analyser:
                 ret[age_bin][name] = self.runner.model.infection_networks.networks[
                     name
                 ].log_beta.grad.item()
+        return ret
+
+    def get_gradient_cases(self, runner, parameters, date):
+        date = datetime.strptime(date, "%Y-%m-%d")
+        parameters = torch.nn.Parameter(parameters)
+
+        def run_for_params(params):
+            for i, name in enumerate(self._get_network_names()):
+                runner.model.infection_networks.networks[name].log_beta = params[i]
+            results, _ = runner()
+            date_idx = np.array(results["dates"]) == date
+            return results["cases_per_timestep"][date_idx]
+
+        res = run_for_params(parameters)
+        res.backward()
+        return parameters.grad.detach().cpu().numpy()
+
+    def get_hessian_cases(self, runner, parameters, date):
+        date = datetime.strptime(date, "%Y-%m-%d")
+
+        def run_for_params(params):
+            for i, name in enumerate(self._get_network_names()):
+                runner.model.infection_networks.networks[name].log_beta = params[i]
+            results, _ = runner()
+            date_idx = np.array(results["dates"]) == date
+            return results["cases_per_timestep"][date_idx]
+
+        hessian = torch.autograd.functional.hessian(run_for_params, parameters)
+        return hessian.detach().cpu().numpy()
+
+    def get_newton_step(self, date):
+        parameters = torch.tensor(
+            [
+                self.runner.model.infection_networks.networks[name].log_beta.item()
+                for name in self._get_network_names()
+            ]
+        )
+        runner = Runner.from_parameters(self.runner.input_parameters)
+        grad = self.get_gradient_cases(runner=runner, parameters=parameters, date=date)
+        hess = self.get_hessian_cases(runner=runner, parameters=parameters, date=date)
+        invhess = np.linalg.inv(hess)
+        step = -invhess.dot(grad)
+        ret = {}
+        for i, name in enumerate(self._get_network_names()):
+            ret[name] = step[i]
         return ret

@@ -2,9 +2,9 @@ title: Torch June default configuration file.
 
 system:
   device: cpu
-  random_seed: random
+  random_seed: 10
 
-data_path: '@torch_june/test/data/data.pkl'
+data_path: '@torch_june/worlds/data_london_small.pkl'
 
 save_path: ./example
 
