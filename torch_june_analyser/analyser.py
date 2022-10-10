@@ -84,6 +84,23 @@ class Analyser:
                 ].log_beta.grad.item()
         return ret
 
+    def get_gradient_cases_by_ethnicity_location(self, date):
+        if self.results is None:
+            raise ValueError("Need to run Runner first")
+        date = datetime.strptime(date, "%Y-%m-%d")
+        date_idx = np.array(self.results["dates"]) == date
+        ethnicities = self.runner.ethnicities
+        ret = {}
+        for ethnicity in ethnicities:
+            ret[ethnicity] = {}
+            cases = self.results[f"cases_by_ethnicity_{ethnicity}"][date_idx]
+            cases.backward(retain_graph=True)
+            for name in self._get_network_names():
+                ret[ethnicity][name] = self.runner.model.infection_networks.networks[
+                    name
+                ].log_beta.grad.item()
+        return ret
+
     def get_gradient_cases(self, runner, parameters, date):
         date = datetime.strptime(date, "%Y-%m-%d")
         parameters = torch.nn.Parameter(parameters)
