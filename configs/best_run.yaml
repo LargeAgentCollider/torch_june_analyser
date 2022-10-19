@@ -1,3 +1,5 @@
+analyser:
+  save_path: "./plots"
 data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_london_full.pkl
 infection_seed:
   log_fraction_initial_cases: -3.439751

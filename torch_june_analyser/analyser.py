@@ -9,7 +9,7 @@ from torch_june_analyser.paths import default_config_path
 
 
 class Analyser:
-    def __init__(self, runner, save_path):
+    def __init__(self, runner, save_path="./plots"):
         self.runner = runner
         self.save_path = Path(save_path)
         self.results = None
@@ -17,7 +17,11 @@ class Analyser:
     @classmethod
     def from_parameters(cls, params):
         runner = Runner.from_parameters(params)
-        return cls(runner=runner, save_path=params["analyser"]["save_path"])
+        if "analyser" in params:
+            save_path = params["analyser"]["save_path"]
+        else:
+            save_path = "./plots"
+        return cls(runner=runner, save_path=save_path)
 
     @classmethod
     def from_file(cls, file=default_config_path):
@@ -40,19 +44,8 @@ class Analyser:
         self._set_parameters()
         self.results, _ = self.runner()
 
-    def get_gradient_cases_by_location(self):
-        if self.results is None:
-            raise ValueError("Need to run Runner first")
-        total_cases = self.results["cases_per_timestep"].sum()
-        total_cases.backward(retain_graph=True)
-        ret = {}
-        for name in self._get_network_names():
-            ret[name] = self.runner.model.infection_networks.networks[
-                name
-            ].log_beta.grad.item()
-        return ret
-
     def get_gradient_cases_by_location(self, date):
+        self.runner.zero_grad()
         if self.results is None:
             raise ValueError("Need to run Runner first")
         date = datetime.strptime(date, "%Y-%m-%d")
@@ -66,7 +59,23 @@ class Analyser:
             ].log_beta.grad.item()
         return ret
 
+    def get_gradient_deaths_by_location(self, date):
+        self.runner.zero_grad()
+        if self.results is None:
+            raise ValueError("Need to run Runner first")
+        date = datetime.strptime(date, "%Y-%m-%d")
+        date_idx = np.array(self.results["dates"]) == date
+        deaths = self.runner.data["results"]["daily_deaths"][date_idx]
+        deaths.backward(retain_graph=True)
+        ret = {}
+        for name in self._get_network_names():
+            ret[name] = self.runner.model.infection_networks.networks[
+                name
+            ].log_beta.grad.item()
+        return ret
+
     def get_gradient_cases_by_age_location(self, date):
+        self.runner.zero_grad()
         if self.results is None:
             raise ValueError("Need to run Runner first")
         date = datetime.strptime(date, "%Y-%m-%d")
@@ -84,7 +93,27 @@ class Analyser:
                 ].log_beta.grad.item()
         return ret
 
+    def get_gradient_normalised_cases_by_age_location(self, date):
+        self.runner.zero_grad()
+        if self.results is None:
+            raise ValueError("Need to run Runner first")
+        date = datetime.strptime(date, "%Y-%m-%d")
+        date_idx = np.array(self.results["dates"]) == date
+        age_bins = self.runner.age_bins
+        ret = {}
+        for age_bin in age_bins[1:]:
+            age_bin = age_bin.item()
+            ret[age_bin] = {}
+            cases = self.results[f"cases_by_age_{age_bin:02d}"][date_idx] / self.results["cases_per_timestep"][date_idx]
+            cases.backward(retain_graph=True)
+            for name in self._get_network_names():
+                ret[age_bin][name] = self.runner.model.infection_networks.networks[
+                    name
+                ].log_beta.grad.item()
+        return ret
+
     def get_gradient_cases_by_ethnicity_location(self, date):
+        self.runner.zero_grad()
         if self.results is None:
             raise ValueError("Need to run Runner first")
         date = datetime.strptime(date, "%Y-%m-%d")
@@ -101,7 +130,27 @@ class Analyser:
                 ].log_beta.grad.item()
         return ret
 
+    def get_gradient_normalised_cases_by_ethnicity_location(self, date):
+        self.runner.zero_grad()
+        if self.results is None:
+            raise ValueError("Need to run Runner first")
+        date = datetime.strptime(date, "%Y-%m-%d")
+        date_idx = np.array(self.results["dates"]) == date
+        ethnicities = self.runner.ethnicities
+        ret = {}
+        for ethnicity in ethnicities:
+            ret[ethnicity] = {}
+            cases = self.results[f"cases_by_ethnicity_{ethnicity}"][date_idx] / self.results["cases_per_timestep"][date_idx]
+            cases.backward(retain_graph=True)
+            for name in self._get_network_names():
+                ret[ethnicity][name] = self.runner.model.infection_networks.networks[
+                    name
+                ].log_beta.grad.item()
+        return ret
+
+
     def get_gradient_cases(self, runner, parameters, date):
+        self.runner.zero_grad()
         date = datetime.strptime(date, "%Y-%m-%d")
         parameters = torch.nn.Parameter(parameters)
 
@@ -117,6 +166,7 @@ class Analyser:
         return parameters.grad.detach().cpu().numpy()
 
     def get_hessian_cases(self, runner, parameters, date):
+        self.runner.zero_grad()
         date = datetime.strptime(date, "%Y-%m-%d")
 
         def run_for_params(params):
