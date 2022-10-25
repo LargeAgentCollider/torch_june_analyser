@@ -1,6 +1,7 @@
 import yaml
 import torch
 import numpy as np
+from tqdm import tqdm
 from datetime import datetime
 from pathlib import Path
 from torch_june import Runner
@@ -75,7 +76,6 @@ class Analyser:
         return ret
 
     def get_gradient_cases_by_age_location(self, date):
-        self.runner.zero_grad()
         if self.results is None:
             raise ValueError("Need to run Runner first")
         date = datetime.strptime(date, "%Y-%m-%d")
@@ -83,6 +83,7 @@ class Analyser:
         age_bins = self.runner.age_bins
         ret = {}
         for age_bin in age_bins[1:]:
+            self.runner.zero_grad()
             age_bin = age_bin.item()
             ret[age_bin] = {}
             cases = self.results[f"cases_by_age_{age_bin:02d}"][date_idx]
@@ -94,7 +95,6 @@ class Analyser:
         return ret
 
     def get_gradient_normalised_cases_by_age_location(self, date):
-        self.runner.zero_grad()
         if self.results is None:
             raise ValueError("Need to run Runner first")
         date = datetime.strptime(date, "%Y-%m-%d")
@@ -102,9 +102,13 @@ class Analyser:
         age_bins = self.runner.age_bins
         ret = {}
         for age_bin in age_bins[1:]:
+            self.runner.zero_grad()
             age_bin = age_bin.item()
             ret[age_bin] = {}
-            cases = self.results[f"cases_by_age_{age_bin:02d}"][date_idx] / self.results["cases_per_timestep"][date_idx]
+            cases = (
+                self.results[f"cases_by_age_{age_bin:02d}"][date_idx]
+                / self.results["cases_per_timestep"][date_idx]
+            )
             cases.backward(retain_graph=True)
             for name in self._get_network_names():
                 ret[age_bin][name] = self.runner.model.infection_networks.networks[
@@ -113,7 +117,6 @@ class Analyser:
         return ret
 
     def get_gradient_cases_by_ethnicity_location(self, date):
-        self.runner.zero_grad()
         if self.results is None:
             raise ValueError("Need to run Runner first")
         date = datetime.strptime(date, "%Y-%m-%d")
@@ -121,6 +124,7 @@ class Analyser:
         ethnicities = self.runner.ethnicities
         ret = {}
         for ethnicity in ethnicities:
+            self.runner.zero_grad()
             ret[ethnicity] = {}
             cases = self.results[f"cases_by_ethnicity_{ethnicity}"][date_idx]
             cases.backward(retain_graph=True)
@@ -130,17 +134,19 @@ class Analyser:
                 ].log_beta.grad.item()
         return ret
 
-    def get_gradient_normalised_cases_by_ethnicity_location(self, date):
-        self.runner.zero_grad()
+    def get_gradient_normalised_cases_by_ethnicity_location(self):
         if self.results is None:
             raise ValueError("Need to run Runner first")
-        date = datetime.strptime(date, "%Y-%m-%d")
-        date_idx = np.array(self.results["dates"]) == date
-        ethnicities = self.runner.ethnicities
+        ethnicities = ["A", "B", "C", "D", "E"]
         ret = {}
-        for ethnicity in ethnicities:
+        for ethnicity in tqdm(ethnicities):
+            self.runner.zero_grad()
             ret[ethnicity] = {}
-            cases = self.results[f"cases_by_ethnicity_{ethnicity}"][date_idx] / self.results["cases_per_timestep"][date_idx]
+            mask = np.char.startswith(self.runner.data["agent"].ethnicity, ethnicity)
+            cases = (
+                self.runner.data["agent"].is_infected[mask].sum()
+                / self.runner.data["agent"].is_infected.sum()
+            )
             cases.backward(retain_graph=True)
             for name in self._get_network_names():
                 ret[ethnicity][name] = self.runner.model.infection_networks.networks[
@@ -148,6 +154,25 @@ class Analyser:
                 ].log_beta.grad.item()
         return ret
 
+    def get_gradient_normalised_cases_by_socio_location(self):
+        if self.results is None:
+            raise ValueError("Need to run Runner first")
+        quintiles = range(5)
+        ret = {}
+        for quintile in tqdm(quintiles):
+            self.runner.zero_grad()
+            ret[quintile] = {}
+            mask = self.runner.data["agent"].socio_indices == quintile
+            cases = (
+                self.runner.data["agent"].is_infected[mask].sum()
+                / self.runner.data["agent"].is_infected.sum()
+            )
+            cases.backward(retain_graph=True)
+            for name in self._get_network_names():
+                ret[quintile][name] = self.runner.model.infection_networks.networks[
+                    name
+                ].log_beta.grad.item()
+        return ret
 
     def get_gradient_cases(self, runner, parameters, date):
         self.runner.zero_grad()
